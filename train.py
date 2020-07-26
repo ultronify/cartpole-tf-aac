@@ -12,11 +12,11 @@ class ActorCriticModel(Model):
         self.action_space_size = action_space_size
         self.state_space_size = state_space_size
         # The critic part
-        self.val_input = Dense(units=64, input_dim=self.state_space_size,
+        self.val_input = Dense(units=256, input_dim=self.state_space_size,
                                activation='relu', kernel_initializer='he_uniform')
         self.val_output = Dense(units=1, activation='linear')
         # The actor part
-        self.policy_input = Dense(units=64, input_dim=self.state_space_size,
+        self.policy_input = Dense(units=256, input_dim=self.state_space_size,
                                   activation='relu', kernel_initializer='he_uniform')
         self.policy_output = Dense(
             units=self.action_space_size, activation='softmax')
@@ -70,18 +70,17 @@ def train(max_eps=1000, gamma=0.99):
     print('Initialize with action space size {0} and state space size {1}'.format(
         action_space_size, state_space_size))
     actor_critic_model = ActorCriticModel(action_space_size, state_space_size)
-    optimizer = tf.optimizers.Adam(learning_rate=1e-4)
-    action_dists, rewards, actions, states = [], [], [], []
+    optimizer = tf.optimizers.Adam(learning_rate=1e-3)
     for eps in range(max_eps):
         state = env.reset()
         done = False
+        rewards, actions, states = [], [], []
         while not done:
             action_dist, _ = actor_critic_model(
                 tf.convert_to_tensor([state], dtype=tf.float32))
             action = sample_action(
                 action_space_size, action_dist.numpy()[0])
             next_state, reward, done, _ = env.step(action)
-            action_dists.append(action_dist[0])
             rewards.append(reward)
             actions.append(action)
             states.append(state)
@@ -94,10 +93,11 @@ def train(max_eps=1000, gamma=0.99):
                 compute_discounted_rewards(rewards, gamma), dtype=tf.float32)
             advantages = q_vals - vals
             value_loss = advantages ** 2
-            log_probs = tf.math.log(tf.clip_by_value(probs, 1e-10, 1-1e-10))
+            clipped_probs = tf.clip_by_value(probs, 1e-10, 1-1e-10)
+            log_probs = tf.math.log(clipped_probs)
             action_onehot = tf.one_hot(
                 actions, action_space_size, dtype=tf.float32)
-            policy_loss = -log_probs * action_onehot * advantages
+            policy_loss = -(log_probs * action_onehot) * advantages
             entropy_loss = -tf.reduce_sum(probs * log_probs)
             loss = tf.reduce_mean(0.5 * value_loss) + \
                 tf.reduce_mean(policy_loss) + 0.01 * entropy_loss
